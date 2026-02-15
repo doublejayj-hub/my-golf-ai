@@ -1,22 +1,21 @@
 import streamlit as st
 import google.generativeai as genai
-import streamlit.components.v1 as components  # 누락되었던 부품 추가
+import streamlit.components.v1 as components
 import base64
 
 # [1] Gemini 보안 설정
 try:
     genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
-    # 가장 안정적인 모델명으로 설정
     model = genai.GenerativeModel('gemini-pro') 
 except Exception as e:
-    st.error(f"Gemini API 키 설정을 확인해주세요: {e}")
+    st.error(f"Gemini API 인증 실패: {e}")
     st.stop()
 
-st.set_page_config(layout="centered", page_title="GDR AI Pro v21")
-st.title("⛳ GDR AI Pro: 지능형 역학 분석 v21.0")
+st.set_page_config(layout="centered", page_title="GDR AI v22")
+st.title("⛳ GDR AI Pro: 재생 완결판 v22.0")
 
-# [2] 하이퍼 안정화 엔진 (재생 보장형)
-def get_final_engine(v_src):
+# [2] 하이퍼 안정화 엔진 (Blob URL 방식)
+def get_blob_engine(v_base64):
     return f"""
     <div id="container" style="width:100%; background:#000; border-radius:15px; overflow:hidden; position:relative;">
         <video id="v" controls playsinline style="width:100%; display:block; aspect-ratio:9/16;"></video>
@@ -29,8 +28,11 @@ def get_final_engine(v_src):
     <script>
         const v=document.getElementById('v'), c=document.getElementById('c'), ctx=c.getContext('2d'), res=document.getElementById('val');
         let maxS=0, minS=180;
+
+        // 1. MediaPipe 설정
         const pose=new Pose({{locateFile:(p)=>`https://cdn.jsdelivr.net/npm/@mediapipe/pose/${{p}}` or `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${{p}}` }});
         pose.setOptions({{modelComplexity:1, smoothLandmarks:true}});
+        
         pose.onResults((r)=>{{
             if(!r.poseLandmarks) return;
             c.width=v.videoWidth; c.height=v.videoHeight;
@@ -44,17 +46,32 @@ def get_final_engine(v_src):
             ctx.strokeStyle = '#00FF00'; ctx.lineWidth = 4;
             ctx.beginPath(); ctx.moveTo(sh.x*c.width, sh.y*c.height); ctx.lineTo(h.x*c.width, h.y*c.height); ctx.stroke();
         }});
-        v.src = "{v_src}";
-        v.onloadedmetadata = () => {{ v.onplay = async () => {{ while(!v.paused && !v.ended){{ await pose.send({{image:v}}); await new Promise(r=>requestAnimationFrame(r)); }} }}; }};
+
+        // 2. [핵심] Base64 데이터를 Blob으로 변환하여 재생 성능 극대화
+        const b64Data = "{v_base64}";
+        const byteCharacters = atob(b64Data);
+        const byteNumbers = new Array(byteCharacters.length);
+        for (let i = 0; i < byteCharacters.length; i++) {{ byteNumbers[i] = byteCharacters.charCodeAt(i); }}
+        const byteArray = new Uint8Array(byteNumbers);
+        const blob = new Blob([byteArray], {{type: 'video/mp4'}});
+        v.src = URL.createObjectURL(blob);
+
+        v.onplay = async () => {{ 
+            while(!v.paused && !v.ended) {{ 
+                await pose.send({{image:v}}); 
+                await new Promise(r=>requestAnimationFrame(r)); 
+            }} 
+        }};
     </script>
     """
 
-# [3] 메인 레이아웃
-f = st.file_uploader("스윙 영상 업로드 (MP4/MOV)", type=['mp4', 'mov'])
+# [3] UI 구성
+f = st.file_uploader("스윙 영상 업로드", type=['mp4', 'mov'])
 
 if f:
-    v_src = "data:video/mp4;base64," + base64.b64encode(f.read()).decode()
-    components.html(get_final_engine(v_src), height=700)
+    # 파일을 읽어서 바이너리 그대로 전달 (메모리 효율적)
+    v_base64 = base64.b64encode(f.read()).decode()
+    components.html(get_blob_engine(v_base64), height=700)
     
     st.divider()
     
@@ -64,26 +81,11 @@ if f:
     
     if s_val > 0:
         if st.button("🔄 Gemini AI 분석 가동"):
-            with st.spinner("Gemini Pro가 운동학적 사슬을 분석 중입니다..."):
+            with st.spinner("Gemini Pro가 분석 중입니다..."):
                 try:
-                    prompt = f"""
-                    당신은 세계 최고의 골프 역학 전문가입니다. 다음 분석 데이터를 바탕으로 리포트를 작성해주세요.
-                    - 측정된 척추각 편차(Δ Spine): {s_val}도
-                    
-                    1. 이 수치가 암시하는 운동학적 사슬(Kinematic Sequence)의 문제를 설명할 것. (특히 배치기/Early Extension 관련)
-                    2. 지면 반력과 회전 축 유지 관점에서 개선해야 할 원론적인 교정 방향을 제시할 것.
-                    3. 6월에 아빠가 될 골퍼에게 따뜻한 격려를 한마디 덧붙일 것.
-                    """
+                    prompt = f"척추각 편차 {s_val}도인 골퍼를 위해 운동학적 사슬 분석을 해주고 6월 아빠를 격려해줘."
                     response = model.generate_content(prompt)
                     st.chat_message("assistant").write(response.text)
-                    
-                    st.divider()
-                    st.subheader("📸 프로 스윙 레퍼런스")
-                    st.image("https://img.vavel.com/tiger-woods-swing-1608144214553.jpg", 
-                             caption="Tiger Woods: 척추각 고정의 정석")
-                    
-                    st.subheader("📺 추천 교정 레슨")
-                    yt_link = "https://www.youtube.com/watch?v=VrOGGXdf_tM" if s_val > 4 else "https://www.youtube.com/watch?v=2vT64W2XfC0"
-                    st.video(yt_link)
+                    st.video("https://www.youtube.com/watch?v=VrOGGXdf_tM" if s_val > 4 else "https://www.youtube.com/watch?v=2vT64W2XfC0")
                 except Exception as e:
-                    st.error(f"Gemini 모델 호출 중 오류가 발생했습니다: {e}")
+                    st.error(f"분석 오류: {e}")
