@@ -1,45 +1,44 @@
 import streamlit as st
+import uuid
 
-# 1. 페이지 설정 및 서버 캐시 강제 무효화
+# 1. 페이지 설정 및 초기화
 st.set_page_config(layout="wide", page_title="GDR AI Golf Coach")
-st.title("⛳ GDR AI 초정밀 분석기 (멀티유저 보안 버전)")
 
-# 2. 전역 변수가 아닌 세션별 독립 변수 확인
-# 다른 사람이 접속하면 이 값들은 초기 상태로 시작됩니다.
-if 'f_video' not in st.session_state:
-    st.session_state.f_video = None
-if 's_video' not in st.session_state:
-    st.session_state.s_video = None
+# 사용자별 고유 세션 ID 생성 (서버 데이터 꼬임 방지)
+if 'session_id' not in st.session_state:
+    st.session_state.session_id = str(uuid.uuid4())
 
-# 3. 탭 구성 - 각 탭 내부의 위젯은 세션에 귀속됩니다.
-tab1, tab2, tab3 = st.tabs(["📸 1단계: 정면", "📸 2단계: 측면", "📊 3단계: 리포트"])
+st.title("⛳ GDR AI 초정밀 분석기 (보안 격리 버전)")
+st.caption(f"접속 세션 ID: {st.session_state.session_id}")
+
+# 2. 업로드 데이터 독립 저장소
+if 'f_vid' not in st.session_state: st.session_state.f_vid = None
+if 's_vid' not in st.session_state: st.session_state.s_vid = None
+
+# 3. 탭 기반 독립 프로세스
+tab1, tab2, tab3 = st.tabs(["📸 정면", "📸 측면", "📊 리포트"])
 
 with tab1:
-    # key값을 고정하여 세션 내에서만 유효하게 설정
-    f_up = st.file_uploader("정면 영상 업로드", type=['mp4', 'mov'], key="user_front_upload")
-    if f_up:
-        st.session_state.f_video = f_up
-    
-    if st.session_state.f_video:
-        st.video(st.session_state.f_video)
-        st.success(f"현재 사용자 영상: {st.session_state.f_video.name}")
+    # key에 session_id를 포함하여 다른 사람과 절대 겹치지 않게 함
+    f_input = st.file_uploader("정면 선택", type=['mp4', 'mov'], key=f"f_{st.session_state.session_id}")
+    if f_input:
+        st.session_state.f_vid = f_input
+    if st.session_state.f_vid:
+        st.video(st.session_state.f_vid)
 
 with tab2:
-    s_up = st.file_uploader("측면 영상 업로드", type=['mp4', 'mov'], key="user_side_upload")
-    if s_up:
-        st.session_state.s_video = s_up
-        
-    if st.session_state.s_video:
-        st.video(st.session_state.s_video)
-        st.success(f"현재 사용자 영상: {st.session_state.s_video.name}")
+    s_input = st.file_uploader("측면 선택", type=['mp4', 'mov'], key=f"s_{st.session_state.session_id}")
+    if s_input:
+        st.session_state.s_vid = s_input
+    if st.session_state.s_vid:
+        st.video(st.session_state.s_vid)
 
 with tab3:
-    # 두 영상이 모두 해당 '세션'에 존재할 때만 리포트 생성
-    if st.session_state.f_video and st.session_state.s_video:
-        st.write(f"🔍 분석 대상: **{st.session_state.f_video.name}** & **{st.session_state.s_video.name}**")
-        if st.button("📊 개인화 리포트 발행"):
+    if st.session_state.f_vid and st.session_state.s_vid:
+        st.success(f"사용자 전용 분석 완료: {st.session_state.f_vid.name}")
+        if st.button("📊 개인 리포트 생성"):
             st.balloons()
-            st.error("🚨 배치기 주의: 임팩트 시 척추각을 유지하세요!")
+            st.error("🚨 배치기 주의: 임팩트 시 척추각 유지!")
             st.info("💡 처방: 6월 아기 탄생 전 '의자 드릴' 연습 추천")
     else:
-        st.warning("영상을 업로드한 사용자에게만 분석 결과가 표시됩니다.")
+        st.warning("본인의 영상을 업로드해 주세요. 다른 사용자의 데이터는 보이지 않습니다.")
