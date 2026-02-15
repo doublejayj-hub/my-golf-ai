@@ -1,18 +1,19 @@
 import streamlit as st
 import google.generativeai as genai
+import streamlit.components.v1 as components  # 누락되었던 부품 추가
 import base64
 
-# [1] Gemini 보안 설정 (호환성 높은 모델명 사용)
+# [1] Gemini 보안 설정
 try:
     genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
-    # 404 에러 방지를 위해 가장 안정적인 모델명으로 설정합니다.
+    # 가장 안정적인 모델명으로 설정
     model = genai.GenerativeModel('gemini-pro') 
 except Exception as e:
     st.error(f"Gemini API 키 설정을 확인해주세요: {e}")
     st.stop()
 
-st.set_page_config(layout="centered", page_title="GDR AI Pro v20")
-st.title("⛳ GDR AI Pro: 지능형 역학 분석 v20.0")
+st.set_page_config(layout="centered", page_title="GDR AI Pro v21")
+st.title("⛳ GDR AI Pro: 지능형 역학 분석 v21.0")
 
 # [2] 하이퍼 안정화 엔진 (재생 보장형)
 def get_final_engine(v_src):
@@ -65,7 +66,6 @@ if f:
         if st.button("🔄 Gemini AI 분석 가동"):
             with st.spinner("Gemini Pro가 운동학적 사슬을 분석 중입니다..."):
                 try:
-                    # 원론적 분석을 강화한 프롬프트
                     prompt = f"""
                     당신은 세계 최고의 골프 역학 전문가입니다. 다음 분석 데이터를 바탕으로 리포트를 작성해주세요.
                     - 측정된 척추각 편차(Δ Spine): {s_val}도
@@ -73,7 +73,6 @@ if f:
                     1. 이 수치가 암시하는 운동학적 사슬(Kinematic Sequence)의 문제를 설명할 것. (특히 배치기/Early Extension 관련)
                     2. 지면 반력과 회전 축 유지 관점에서 개선해야 할 원론적인 교정 방향을 제시할 것.
                     3. 6월에 아빠가 될 골퍼에게 따뜻한 격려를 한마디 덧붙일 것.
-                    4. 전문적인 어조를 사용하되 이해하기 쉽게 설명할 것.
                     """
                     response = model.generate_content(prompt)
                     st.chat_message("assistant").write(response.text)
@@ -81,7 +80,7 @@ if f:
                     st.divider()
                     st.subheader("📸 프로 스윙 레퍼런스")
                     st.image("https://img.vavel.com/tiger-woods-swing-1608144214553.jpg", 
-                             caption="Tiger Woods: 척추각과 하체 리드의 정석")
+                             caption="Tiger Woods: 척추각 고정의 정석")
                     
                     st.subheader("📺 추천 교정 레슨")
                     yt_link = "https://www.youtube.com/watch?v=VrOGGXdf_tM" if s_val > 4 else "https://www.youtube.com/watch?v=2vT64W2XfC0"
