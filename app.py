@@ -3,22 +3,29 @@ import google.generativeai as genai
 import streamlit.components.v1 as components
 import base64
 
-# [1] Gemini 보안 설정 (최신 모델명으로 업데이트)
-try:
-    genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
-    # 404 에러를 방지하기 위해 최신 모델인 'gemini-1.5-flash'를 사용합니다.
-    model = genai.GenerativeModel('gemini-1.5-flash') 
-except Exception as e:
-    st.error(f"Gemini API 인증 실패: {e}")
-    st.stop()
+# [1] Gemini 모델 인식 로직 강화
+def get_gemini_model():
+    try:
+        genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
+        # 첫 번째 시도: 최신 1.5 Flash
+        return genai.GenerativeModel('gemini-1.5-flash')
+    except Exception:
+        try:
+            # 두 번째 시도: 표준 Pro 버전
+            return genai.GenerativeModel('gemini-pro')
+        except Exception as e:
+            st.error(f"Gemini 모델 인식에 실패했습니다: {e}")
+            return None
 
-st.set_page_config(layout="wide", page_title="GDR AI v33.0")
-st.title("⛳ GDR AI Pro: 고정밀 역학 분석 v33.0")
+model = get_gemini_model()
+
+st.set_page_config(layout="wide", page_title="GDR AI v34.0")
+st.title("⛳ GDR AI Pro: 모델 인식 최적화 v34.0")
 
 # [2] 하이브리드 수치 안정화 엔진 (이동 평균 필터 유지)
 def get_pro_engine(v_b64):
     return f"""
-    <div id="container" style="width:100%; background:#000; border-radius:15px; overflow:hidden; position:relative; box-shadow: 0 10px 30px rgba(0,0,0,0.5);">
+    <div id="container" style="width:100%; background:#000; border-radius:15px; overflow:hidden; position:relative;">
         <video id="v" controls playsinline style="width:100%; display:block; aspect-ratio:9/16; background:#000;"></video>
         <canvas id="c" style="position:absolute; top:0; left:0; width:100%; height:100%; pointer-events:none;"></canvas>
         <div style="position:absolute; top:20px; right:20px; background:rgba(0,0,0,0.85); color:#0f0; padding:12px 18px; border-radius:10px; font-family:monospace; border:1px solid #0f0; z-index:1000; font-size:18px;">
@@ -76,17 +83,17 @@ if f:
         
         s_val = st.number_input("분석기에서 확인된 Δ Spine 수치를 입력하세요", min_value=0.0, step=0.1)
         
-        if s_val > 0:
+        if s_val > 0 and model:
             if st.button("🔄 Gemini AI 전문 분석 시작"):
-                with st.spinner("Gemini Flash 엔진이 역학 데이터를 해석 중입니다..."):
+                with st.spinner("Gemini 엔진이 리포트를 작성 중입니다..."):
                     try:
                         prompt = f"""
                         당신은 골프 역학 전문가입니다. 다음 데이터를 분석해주세요.
                         - 측정된 척추각 편차(Δ Spine): {s_val}도
                         
-                        1. 이 데이터가 암시하는 '배치기' 문제를 역학적으로 분석하세요.
+                        1. 이 데이터가 암시하는 '배치기' 문제를 원론적으로 분석하세요.
                         2. 6월에 아빠가 될 골퍼에게 격려의 메시지를 보내주세요.
-                        한국어로 정중하게 답변해주세요.
+                        한국어로 답변해주세요.
                         """
                         response = model.generate_content(prompt)
                         st.chat_message("assistant").write(response.text)
@@ -96,6 +103,6 @@ if f:
                         yt_link = "https://www.youtube.com/watch?v=VrOGGXdf_tM" if s_val > 4 else "https://www.youtube.com/watch?v=2vT64W2XfC0"
                         st.video(yt_link)
                     except Exception as e:
-                        st.error(f"리포트 생성 오류: {e}")
+                        st.error(f"리포트 생성 중 오류가 발생했습니다. 라이브러리 버전을 확인하세요: {e}")
 
 st.sidebar.markdown(f"**Baby Due: June 2026** 👶")
