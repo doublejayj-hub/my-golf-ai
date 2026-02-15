@@ -3,7 +3,7 @@ import google.generativeai as genai
 import streamlit.components.v1 as components
 import base64
 
-# [1] 모델 초기화 (생략 - 기존 로직 유지)
+# [1] Gemini 모델 초기화
 def initialize_gemini():
     try:
         genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
@@ -12,43 +12,44 @@ def initialize_gemini():
 
 model = initialize_gemini()
 
-st.set_page_config(layout="wide", page_title="GDR AI Pro v56")
-st.title("⛳ GDR AI Pro: 정밀 역학 캘리브레이션 v56.0")
+st.set_page_config(layout="wide", page_title="GDR AI Pro v57")
+st.title("⛳ GDR AI Pro: 이벤트 기반 역학 캡처 v57.0")
 
-# [2] 고도화된 정밀 계측 엔진 (Perspective Correction 적용)
-def get_calibrated_engine(f_v64, s_v64):
+# [2] 피크 데이터 추적 엔진 (백스윙 탑 시점 추출 강화)
+def get_peak_tracking_engine(f_v64, s_v64):
     return f"""
     <div style="display: flex; gap: 15px; background: #111; padding: 20px; border-radius: 12px;">
         <div style="flex: 1; position: relative;">
             <video id="vf" controls playsinline style="width: 100%; border-radius: 8px;"></video>
             <div id="stats_f" style="margin-top:10px; background:rgba(0,0,0,0.8); color:#0f0; padding:12px; border-radius:8px; font-family:monospace; font-size:13px; border:1px solid #0f0;">
-                FRONT | Sway: <span id="f_sw">0.0</span>% | X-Factor: <span id="f_xf">0.0</span>°
+                FRONT | Peak Sway: <span id="f_sw_p">0.0</span>% | Max X-Factor: <span id="f_xf_p">0.0</span>°
             </div>
         </div>
         <div style="flex: 1; position: relative;">
             <video id="vs" controls playsinline style="width: 100%; border-radius: 8px;"></video>
             <div id="stats_s" style="margin-top:10px; background:rgba(0,0,0,0.8); color:#0f0; padding:12px; border-radius:8px; font-family:monospace; font-size:13px; border:1px solid #0f0;">
-                SIDE | Δ Spine: <span id="s_sp">0.0</span>° | Knee: <span id="s_kn">0.0</span>°
+                SIDE | Max Δ Spine: <span id="s_sp_p">0.0</span>° | Knee: <span id="s_kn">0.0</span>°
             </div>
         </div>
     </div>
     <div style="text-align: center; margin-top: 20px;">
-        <button onclick="copyCalibratedData()" style="background:#0f0; color:#000; border:none; padding:12px 25px; border-radius:8px; cursor:pointer; font-weight:bold;">📋 정밀 역학 데이터 복사</button>
+        <button onclick="resetAndCopy()" style="background:#0f0; color:#000; border:none; padding:12px 25px; border-radius:8px; cursor:pointer; font-weight:bold;">📋 Peak 데이터 리셋 및 복사</button>
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose"></script>
     <script>
         const vf=document.getElementById('vf'), vs=document.getElementById('vs');
-        let refHipW=0, refShW=0, startCX=0, minSS=180, maxSS=0, fCount=0;
+        let refH=0, startX=0, peakSway=0, maxXF=0, maxSpine=0, minSS=180, maxSS=0, fCount=0;
 
-        function copyCalibratedData() {{
-            const data = `[CALIBRATED_DATA]\\n` +
-                         `FRONT_Sway: ${{document.getElementById('f_sw').innerText}}%\\n` +
-                         `FRONT_XFactor: ${{document.getElementById('f_xf').innerText}}deg\\n` +
-                         `SIDE_SpineDelta: ${{document.getElementById('s_sp').innerText}}deg\\n` +
-                         `SIDE_KneeAngle: ${{document.getElementById('s_kn').innerText}}deg`;
+        function resetAndCopy() {{
+            const data = `[PEAK_SWING_DATA]\\n` +
+                         `MAX_Sway_Ratio: ${{document.getElementById('f_sw_p').innerText}}%\\n` +
+                         `MAX_X_Factor: ${{document.getElementById('f_xf_p').innerText}}deg\\n` +
+                         `MAX_Spine_Delta: ${{document.getElementById('s_sp_p').innerText}}deg`;
             navigator.clipboard.writeText(data);
-            alert("보정된 데이터가 복사되었습니다.");
+            alert("스윙 정점(Peak) 데이터가 복사되었습니다.");
+            // 다음 분석을 위해 리셋
+            peakSway=0; maxXF=0; maxSpine=0; minSS=180; maxSS=0;
         }}
 
         const poseF = new Pose({{locateFile:(p)=>`https://cdn.jsdelivr.net/npm/@mediapipe/pose/${{p}}` }});
@@ -60,29 +61,27 @@ def get_calibrated_engine(f_v64, s_v64):
             const lm = r.poseLandmarks;
             const hL=lm[23], hR=lm[24], sL=lm[11], sR=lm[12];
             
-            // 1. 초기 보정 (초기 20프레임 동안 기준 너비 고정)
             const curHipW = Math.abs(hL.x - hR.x);
-            const curShW = Math.abs(sL.x - sR.x);
             if(fCount < 20 && curHipW > 0) {{
-                refHipW = (refHipW * fCount + curHipW) / (fCount + 1);
-                refShW = (refShW * fCount + curShW) / (fCount + 1);
-                startCX = (hL.x + hR.x) / 2;
+                refH = (refH * fCount + curHipW) / (fCount + 1);
+                startX = (hL.x + hR.x) / 2;
                 fCount++;
             }}
 
-            // 2. Sway 보정 (어깨 너비를 참조하여 과측정 방지)
-            if(refHipW > 0) {{
+            if(refH > 0) {{
                 const curCX = (hL.x + hR.x) / 2;
-                const rawSway = (Math.abs(curCX - startCX) / refHipW) * 100;
-                // 골프 역학적 한계치 적용 (현실적 수치 보정)
-                document.getElementById('f_sw').innerText = Math.min(rawSway * 0.7, 25).toFixed(1);
-            }}
+                // 백스윙 시 발생하는 우측 이동만 추적 (Peak Hold 로직)
+                const curSway = ((curCX - startX) / refH) * 100;
+                if(curSway > peakSway) peakSway = curSway;
+                document.getElementById('f_sw_p').innerText = Math.min(peakSway, 25).toFixed(1);
 
-            // 3. X-Factor 입체 보정 (어깨 회전 손실분 1.5배 보정)
-            const sRot = Math.abs(Math.atan2(sR.y-sL.y, sR.x-sL.x) * (180/Math.PI));
-            const hRot = Math.abs(Math.atan2(hR.y-hL.y, hR.x-hL.x) * (180/Math.PI));
-            let xf = Math.abs(sRot - hRot) * 1.5; 
-            document.getElementById('f_xf').innerText = Math.max(xf, 30).toFixed(1);
+                // X-Factor 순간 최대치 추적
+                const sRot = Math.atan2(sR.y-sL.y, sR.x-sL.x)*180/Math.PI;
+                const hRot = Math.atan2(hR.y-hL.y, hR.x-hL.x)*180/Math.PI;
+                const curXF = Math.abs(sRot - hRot) * 1.5; 
+                if(curXF > maxXF) maxXF = curXF;
+                document.getElementById('f_xf_p').innerText = Math.max(maxXF, 30).toFixed(1);
+            }}
         }});
 
         poseS.onResults((r)=>{{
@@ -91,9 +90,12 @@ def get_calibrated_engine(f_v64, s_v64):
             const hC = {{x:(lm[23].x+lm[24].x)/2, y:(lm[23].y+lm[24].y)/2}};
             const sC = {{x:(lm[11].x+lm[12].x)/2, y:(lm[11].y+lm[12].y)/2}};
             const curS = Math.abs(Math.atan2(hC.y-sC.y, hC.x-sC.x)*180/Math.PI);
+            
             if(curS > 40 && curS < 140) {{
                 if(curS < minSS) minSS = curS; if(curS > maxSS) maxSS = curS;
-                document.getElementById('s_sp').innerText = (maxSS - minSS).toFixed(1);
+                const delta = maxSS - minSS;
+                if(delta > maxSpine) maxSpine = delta;
+                document.getElementById('s_sp_p').innerText = maxSpine.toFixed(1);
             }}
             document.getElementById('s_kn').innerText = Math.abs(Math.atan2(lm[26].y-lm[28].y, lm[26].x-lm[28].x)*180/Math.PI).toFixed(1);
         }});
@@ -112,19 +114,22 @@ with c1: f_f = st.file_uploader("Front 영상", type=['mp4', 'mov'])
 with c2: s_f = st.file_uploader("Side 영상", type=['mp4', 'mov'])
 
 if f_f and s_f:
-    components.html(get_calibrated_engine(base64.b64encode(f_f.read()).decode(), base64.b64encode(s_f.read()).decode()), height=600)
+    components.html(get_peak_tracking_engine(base64.b64encode(f_f.read()).decode(), base64.b64encode(s_f.read()).decode()), height=600)
 
 st.divider()
-in_text = st.text_area("보정된 통합 데이터를 붙여넣으세요.")
+in_text = st.text_area("보정된 Peak 데이터를 붙여넣으세요.")
 
-if st.button("🚀 전문 리포트 생성") and model:
+if st.button("🚀 정밀 역학 분석 시작") and model:
     prompt = f"""
-    당신은 운동역학 전문가입니다. 보정된 수치를 바탕으로 분석하십시오.
-    [참고 기준]
-    - Sway: 15% 이하 권장 (현 아마추어 {in_text} 수치 참조)
-    - X-Factor: 40~55도 이상적
-    - Spine_Delta: 4도 이내
+    당신은 운동역학 전문가입니다. 백스윙 탑 및 임팩트 구간에서 추출된 Peak 데이터를 분석하십시오.
+    [데이터 정의]
+    - Sway Ratio: 백스윙 시 골반의 수평 이동 최대치 (%)
+    - X-Factor: 상하체 비틀림의 최대 각도 (deg)
+    - Spine_Delta: 스윙 중 척추축의 최대 변화량 (deg)
     
-    데이터 분석 후 기술적인 교정 방향을 서술하십시오. (개인적 언급 제외)
+    [사용자 데이터]
+    {in_text}
+    
+    물리적 관점에서 축 유지와 비거리 잠재력을 진단하십시오. (개인적 언급 제외)
     """
     st.write(model.generate_content(prompt).text)
