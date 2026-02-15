@@ -1,84 +1,84 @@
 import streamlit as st
+import cv2
+import mediapipe as mp
+import numpy as np
+import tempfile
 import google.generativeai as genai
-import streamlit.components.v1 as components
-import base64
+import os
 
-# [1] Gemini 보안 설정
+# [1] Gemini 및 MediaPipe 초기화
 try:
     genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
-    model = genai.GenerativeModel('gemini-pro') 
-except Exception:
-    st.error("Gemini API 인증 실패. Secrets를 확인하세요.")
+    model = genai.GenerativeModel('gemini-pro')
+except:
+    st.error("API 키 설정을 확인하세요.")
     st.stop()
 
-st.set_page_config(layout="centered", page_title="GDR AI Final")
-st.title("⛳ GDR AI Pro: 최종 재생 보장 버전 v24.0")
+mp_pose = mp.solutions.pose
+pose = mp_pose.Pose(static_image_mode=False, model_complexity=1)
 
-# [2] 하이퍼 안정화 엔진 (영상 우선 로드 방식)
-def get_guaranteed_engine(v_base64):
-    return f"""
-    <div style="width:100%; background:#000; border-radius:15px; overflow:hidden; position:relative;">
-        <video id="v" controls playsinline style="width:100%; display:block; aspect-ratio:9/16; background:#000;"></video>
-        <canvas id="c" style="position:absolute; top:0; left:0; width:100%; height:100%; pointer-events:none;"></canvas>
-        <div style="position:absolute; top:15px; right:15px; background:rgba(0,0,0,0.8); color:#0f0; padding:8px 12px; border-radius:5px; font-family:monospace; border:1px solid #0f0; z-index:1000; font-size:15px;">
-            Δ Spine: <span id="val">0.0</span>°
-        </div>
-    </div>
-    
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js"></script>
-    <script>
-        const v=document.getElementById('v'), c=document.getElementById('c'), ctx=c.getContext('2d'), res=document.getElementById('val');
-        let maxS=0, minS=180;
+st.set_page_config(layout="centered", page_title="GDR AI v25")
+st.title("⛳ GDR AI Pro: 서버 사이드 분석 v25.0")
 
-        // 1. 영상 소스 주입 (가장 표준적인 데이터 URL 방식)
-        v.src = "data:video/mp4;base64,{v_base64}";
-
-        // 2. MediaPipe Pose 초기화 (영상과 독립적으로 실행)
-        const pose = new Pose({{locateFile:(p)=>`https://cdn.jsdelivr.net/npm/@mediapipe/pose/${{p}}` or `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${{p}}` }});
-        pose.setOptions({{modelComplexity:1, smoothLandmarks:true}});
-        pose.onResults((r) => {{
-            if(!r.poseLandmarks) return;
-            c.width=v.videoWidth; c.height=v.videoHeight;
-            ctx.clearRect(0,0,c.width,c.height);
-            const sh=r.poseLandmarks[11], h=r.poseLandmarks[23];
-            const spine = Math.abs(Math.atan2(h.y-sh.y, h.x-sh.x)*180/Math.PI);
-            if(spine > 0) {{
-                if(spine > maxS) maxS = spine; if(spine < minS) minS = spine;
-                res.innerText = (maxS - minS).toFixed(1);
-            }}
-            ctx.strokeStyle = '#00FF00'; ctx.lineWidth = 5;
-            ctx.beginPath(); ctx.moveTo(sh.x*c.width, sh.y*c.height); ctx.lineTo(h.x*c.width, h.y*c.height); ctx.stroke();
-        }});
-
-        v.onplay = async () => {{ 
-            while(!v.paused && !v.ended) {{ 
-                try {{ await pose.send({{image:v}}); }} catch(e) {{ console.error(e); }}
-                await new Promise(r=>requestAnimationFrame(r)); 
-            }} 
-        }};
-    </script>
-    """
-
-# [3] UI 구성
-f = st.file_uploader("스윙 영상 업로드", type=['mp4', 'mov'])
+# [2] 파일 업로드
+f = st.file_uploader("스윙 영상 업로드 (MP4/MOV)", type=['mp4', 'mov'])
 
 if f:
-    v_base64 = base64.b64encode(f.read()).decode()
-    # height를 영상 비율에 맞춰 700으로 고정하여 잘림 방지
-    components.html(get_guaranteed_engine(v_base64), height=700)
+    # 임시 파일 저장 (서버가 읽기 위함)
+    tfile = tempfile.NamedTemporaryFile(delete=False)
+    tfile.write(f.read())
     
-    st.divider()
-    
-    # [4] AI 심층 역학 리포트 (사용자 입력 브릿지)
-    st.header("📋 AI 지능형 역학 리포트")
-    s_val = st.number_input("영상 우측 상단의 Δ Spine 수치를 입력하세요", min_value=0.0, step=0.1)
-    
-    if s_val > 0:
-        if st.button("🔄 Gemini AI 분석 가동"):
-            with st.spinner("전문 역학 분석 중..."):
-                prompt = f"척추각 편차 {s_val}도인 골퍼를 위해 운동학적 사슬 분석을 해주고 6월 아빠를 격려해줘. 한국어로 답변해줘."
+    with st.spinner("서버에서 영상을 정밀 분석 중입니다..."):
+        cap = cv2.VideoCapture(tfile.name)
+        spine_angles = []
+        
+        while cap.isOpened():
+            ret, frame = cap.read()
+            if not ret: break
+            
+            # 성능을 위해 프레임 리사이징 및 RGB 변환
+            frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            results = pose.process(frame_rgb)
+            
+            if results.pose_landmarks:
+                # 척추각 계산 (어깨 중앙과 골반 중앙 좌표 활용)
+                lm = results.pose_landmarks.landmark
+                sh_y = (lm[mp_pose.PoseLandmark.LEFT_SHOULDER].y + lm[mp_pose.PoseLandmark.RIGHT_SHOULDER].y) / 2
+                sh_x = (lm[mp_pose.PoseLandmark.LEFT_SHOULDER].x + lm[mp_pose.PoseLandmark.RIGHT_SHOULDER].x) / 2
+                h_y = (lm[mp_pose.PoseLandmark.LEFT_HIP].y + lm[mp_pose.PoseLandmark.RIGHT_HIP].y) / 2
+                h_x = (lm[mp_pose.PoseLandmark.LEFT_HIP].x + lm[mp_pose.PoseLandmark.RIGHT_HIP].x) / 2
+                
+                angle = np.abs(np.arctan2(h_y - sh_y, h_x - sh_x) * 180 / np.pi)
+                spine_angles.append(angle)
+        
+        cap.release()
+        
+        if spine_angles:
+            s_delta = round(max(spine_angles) - min(spine_angles), 1)
+            
+            # [3] 결과 표시 및 Gemini 분석
+            st.success(f"✅ 분석 완료! 측정된 척추각 편차: {s_delta}°")
+            
+            st.divider()
+            st.header("📋 AI 지능형 역학 리포트")
+            
+            with st.spinner("Gemini Pro가 분석 리포트를 작성 중입니다..."):
+                prompt = f"""
+                당신은 골프 역학 전문가입니다. 척추각 편차 {s_delta}도인 골퍼를 위해:
+                1. 이 수치가 암시하는 운동학적 문제(배치기 등)를 역학적으로 설명할 것.
+                2. 6월에 아빠가 될 골퍼를 위해 따뜻한 응원을 포함할 것.
+                한국어로 답변해줘.
+                """
                 response = model.generate_content(prompt)
                 st.chat_message("assistant").write(response.text)
-                st.video("https://www.youtube.com/watch?v=VrOGGXdf_tM" if s_val > 4 else "https://www.youtube.com/watch?v=2vT64W2XfC0")
+                
+            st.divider()
+            st.subheader("📺 추천 교정 레슨")
+            st.video("https://www.youtube.com/watch?v=VrOGGXdf_tM" if s_delta > 4 else "https://www.youtube.com/watch?v=2vT64W2XfC0")
+            
+        else:
+            st.error("영상에서 뼈대를 추출하지 못했습니다. 정면 또는 측면 전신이 보이는 영상을 사용해 주세요.")
+            
+    os.unlink(tfile.name) # 임시 파일 삭제
 
 st.sidebar.markdown(f"**Baby Due: June 2026** 👶")
