@@ -3,7 +3,7 @@ import google.generativeai as genai
 import streamlit.components.v1 as components
 import base64
 
-# [1] Gemini 모델 초기화
+# [1] 모델 초기화
 def initialize_gemini():
     try:
         genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
@@ -12,89 +12,57 @@ def initialize_gemini():
 
 model = initialize_gemini()
 
-st.set_page_config(layout="wide", page_title="GDR AI Pro v81")
-st.title("⛳ GDR AI Pro: UI 최적화 및 조작성 패치 v81.0")
+st.set_page_config(layout="wide", page_title="GDR AI Pro v82")
+st.title("⛳ GDR AI Pro: 강제 프레임 추출 및 무결성 패치 v82.0")
 
-# [2] 대화면 UI 및 엔진 통합 (영상 사이즈 확대)
-def get_large_ui_engine(f_v64, s_v64):
+# [2] 고정밀 분석 엔진 (프레임 강제 동기화)
+def get_step_engine(f_v64, s_v64):
     return f"""
     <style>
-        .video-container {{
-            background: #111;
-            padding: 15px;
-            border-radius: 15px;
-            border: 2px solid #333;
-            margin-bottom: 15px;
-        }}
-        video {{
-            width: 100%;
-            height: auto;
-            max-height: 500px; /* 시인성 확보를 위한 높이 확대 */
-            border-radius: 10px;
-            background: #000;
-        }}
-        .stat-box {{
-            margin-top: 15px;
-            background: rgba(0, 255, 0, 0.1);
-            color: #0f0;
-            padding: 20px;
-            border-radius: 10px;
-            font-family: 'Courier New', monospace;
-            font-size: 20px; /* 수치 가독성 확대 */
-            border: 1px solid #0f0;
-            font-weight: bold;
-        }}
-        #status {{
-            color: #888;
-            font-size: 14px;
-            margin-top: 10px;
-            text-align: center;
-        }}
+        .video-wrap {{ background: #111; padding: 15px; border-radius: 12px; border: 1px solid #333; margin-bottom: 20px; }}
+        video {{ width: 100%; height: auto; border-radius: 8px; background: #000; }}
+        .stat-display {{ margin-top:10px; color:#0f0; font-family:monospace; font-size:18px; font-weight:bold; background:rgba(0,255,0,0.1); padding:15px; border-radius:8px; border:1px solid #0f0; }}
+        #log {{ font-size: 12px; color: #555; margin-top: 5px; text-align: center; }}
     </style>
 
-    <div style="display: flex; flex-direction: column; gap: 20px;">
-        <div class="video-container">
-            <h3 style="color: #0f0; margin: 0 0 10px 0;">FRONT VIEW</h3>
-            <video id="vf" controls playsinline></video>
-            <div class="stat-box">
-                Sway: <span id="f_sw">0.0</span>% | X-Factor: <span id="f_xf">0.0</span>°
-            </div>
-        </div>
-        
-        <div class="video-container">
-            <h3 style="color: #0f0; margin: 0 0 10px 0;">SIDE VIEW</h3>
-            <video id="vs" controls playsinline></video>
-            <div class="stat-box">
-                Δ Spine: <span id="s_sp">0.0</span>° | Knee: <span id="s_kn">0.0</span>°
-            </div>
-        </div>
+    <div class="video-wrap">
+        <h4 style="color:#0f0; margin:0 0 10px 0;">FRONT VIEW (Scanning...)</h4>
+        <video id="vf" controls playsinline></video>
+        <div class="stat-display">Sway: <span id="f_sw">0.0</span>% | X-Factor: <span id="f_xf">0.0</span>°</div>
+    </div>
+
+    <div class="video-wrap">
+        <h4 style="color:#0f0; margin:0 0 10px 0;">SIDE VIEW (Scanning...)</h4>
+        <video id="vs" controls playsinline></video>
+        <div class="stat-display">Δ Spine: <span id="s_sp">0.0</span>° | Knee: <span id="s_kn">0.0</span>°</div>
     </div>
     
-    <div id="status">준비 완료. 영상의 재생 버튼을 눌러주세요.</div>
+    <div id="log">시스템 준비 완료. 영상을 재생하면 추출이 시작됩니다.</div>
     <div style="text-align: center; margin-top: 20px;">
         <button onclick="copyData()" style="background:#0f0; color:#000; border:none; padding:15px 40px; border-radius:10px; cursor:pointer; font-weight:bold; font-size:18px;">📋 데이터 복사</button>
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose"></script>
     <script>
-        const vf=document.getElementById('vf'), vs=document.getElementById('vs'), st=document.getElementById('status');
+        const vf=document.getElementById('vf'), vs=document.getElementById('vs'), log=document.getElementById('log');
         let f_pkSw=0, f_pkXF=0, f_c=0, f_lock=false, s_pkSp=0, s_pkKn=0, s_c=0, s_lock=false;
         let f_refH=0, f_stCX=0, s_minS=0, s_maxS=0;
 
         const pose = new Pose({{locateFile:(p)=>`https://cdn.jsdelivr.net/npm/@mediapipe/pose/${{p}}` }});
         pose.setOptions({{modelComplexity:0, smoothLandmarks:true}});
 
+        // [핵심] 수치 추출 로직 무결성 강화
         pose.onResults((r)=>{{
             if(!r.poseLandmarks) return;
-            st.innerText = "분석 엔진 가동 중...";
+            log.innerText = "상태: 관절 인식 및 연산 중...";
             const lm = r.poseLandmarks;
             const hL=lm[23], hR=lm[24], sL=lm[11], sR=lm[12], wL=lm[15];
 
-            if (wL.y > hL.y - 0.05) {{ f_lock = true; s_lock = true; st.innerText = "임팩트 구간 도달 - 수치 고정됨"; return; }}
+            if (wL.y > hL.y - 0.03) {{ f_lock = true; s_lock = true; log.innerText = "임팩트 시점 데이터 고정 완료"; return; }}
 
             if(!f_lock) {{
                 if(f_c < 15) {{ f_refH = Math.abs(hL.x - hR.x); f_stCX = (hL.x+hR.x)/2; f_c++; }}
-                else {{
+                else if(f_refH > 0) {{
                     let sw = (((hL.x+hR.x)/2 - f_stCX) / f_refH) * 100;
                     if(sw > f_pkSw && sw < 17) f_pkSw = sw;
                     document.getElementById('f_sw').innerText = f_pkSw.toFixed(1);
@@ -120,37 +88,41 @@ def get_large_ui_engine(f_v64, s_v64):
             }}
         }});
 
-        async function run(v) {{
+        // [사전검증] 프레임 단위 강제 전송 엔진
+        async function runScan(v) {{
             while(!v.paused && !v.ended) {{
-                await pose.send({{image: v}});
-                await new Promise(r => setTimeout(r, 80));
+                try {{
+                    await pose.send({{image: v}});
+                }} catch(e) {{
+                    console.error("Frame skip");
+                }}
+                await new Promise(r => setTimeout(r, 100)); // 연산 부하 방지용 딜레이
             }}
         }}
 
         function copyData() {{
-            const res = `[GDR_FINAL]\\nF_Sway: ${{document.getElementById('f_sw').innerText}}%\\nF_XF: ${{document.getElementById('f_xf').innerText}}deg\\nS_Spine: ${{document.getElementById('s_sp').innerText}}deg\\nS_Knee: ${{document.getElementById('s_kn').innerText}}deg`;
-            navigator.clipboard.writeText(res); alert("데이터 복사 완료");
+            const res = `[GDR_V82]\\nF_Sway: ${{document.getElementById('f_sw').innerText}}%\\nF_XF: ${{document.getElementById('f_xf').innerText}}deg\\nS_Spine: ${{document.getElementById('s_sp').innerText}}deg\\nS_Knee: ${{document.getElementById('s_kn').innerText}}deg`;
+            navigator.clipboard.writeText(res); alert("데이터가 복사되었습니다.");
         }}
 
-        vf.onplay = () => {{ f_pkSw=0; f_pkXF=0; f_c=0; f_lock=false; run(vf); }};
-        vs.onplay = () => {{ s_pkSp=0; s_pkKn=0; s_c=0; s_lock=false; run(vs); }};
+        vf.onplay = () => {{ f_pkSw=0; f_pkXF=0; f_c=0; f_lock=false; runScan(vf); }};
+        vs.onplay = () => {{ s_pkSp=0; s_pkKn=0; s_c=0; s_lock=false; runScan(vs); }};
 
         vf.src = URL.createObjectURL(new Blob([Uint8Array.from(atob("{f_v64}"), c => c.charCodeAt(0))], {{type: 'video/mp4'}}));
         vs.src = URL.createObjectURL(new Blob([Uint8Array.from(atob("{s_v64}"), c => c.charCodeAt(0))], {{type: 'video/mp4'}}));
     </script>
     """
 
-# [3] 파일 업로드
-f_f = st.file_uploader("Front Video", type=['mp4', 'mov'])
-s_f = st.file_uploader("Side Video", type=['mp4', 'mov'])
+# [3] UI 구성
+f_file = st.file_uploader("Front Video (정면)", type=['mp4', 'mov'])
+s_file = st.file_uploader("Side Video (측면)", type=['mp4', 'mov'])
 
-if f_f and s_f:
-    f_b = base64.b64encode(f_f.read()).decode()
-    s_b = base64.b64encode(s_f.read()).decode()
-    # height를 충분히 확보하여 스크롤 없이 조작 가능하게 함
-    components.html(get_large_ui_engine(f_b, s_b), height=1400)
+if f_file and s_file:
+    f_b = base64.b64encode(f_file.read()).decode()
+    s_b = base64.b64encode(s_file.read()).decode()
+    components.html(get_step_engine(f_b, s_b), height=1400)
 
 st.divider()
-in_text = st.text_area("데이터를 붙여넣으세요.")
-if st.button("🚀 종합 분석 시작"):
-    st.write(model.generate_content(f"전문가 분석: {in_text}").text)
+in_text = st.text_area("복사된 데이터를 여기에 붙여넣으세요.")
+if st.button("🚀 종합 역학 분석 리포트 생성"):
+    st.write(model.generate_content(f"운동역학 전문가로서 기술 분석 수행: {in_text}").text)
