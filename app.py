@@ -8,8 +8,7 @@ st.set_page_config(layout="wide", page_title="GDR AI Real-Time Coach")
 if 'session_id' not in st.session_state:
     st.session_state.session_id = str(uuid.uuid4())
 
-st.title("⛳ GDR AI 진짜 연산 엔진 v1.0")
-st.write("AI가 영상의 픽셀을 직접 분석하여 관절 33개를 실시간 추적합니다.")
+st.title("⛳ GDR AI 진짜 연산 엔진 (프레임 연동 버전)")
 
 # 2. 영상 세션 관리
 if 'f_vid' not in st.session_state: st.session_state.f_vid = None
@@ -20,17 +19,20 @@ with tab1:
     f_input = st.file_uploader("분석할 영상 업로드", type=['mp4', 'mov'], key=f"v_{st.session_state.session_id}")
     
     if f_input:
-        st.session_state.f_vid = f_input
+        # 파일 바이너리 데이터를 JS로 넘겨주기 위해 임시 저장 및 데이터 처리
+        import base64
+        tfile = f_input.read()
+        b64_vid = base64.b64encode(tfile).decode()
         
-        # [핵심] 브라우저에서 직접 구동되는 MediaPipe AI 엔진
-        # 서버 연산을 거치지 않아 S24에서 매우 빠릅니다.
+        st.info("AI 엔진에 영상을 로드 중입니다. 잠시만 기다려주세요...")
+
         components.html(
-            """
-            <div id="container" style="position: relative; width: 100%; height: 400px; background: #000;">
-                <video id="input_video" style="display:none;"></video>
-                <canvas id="output_canvas" style="width: 100%; height: 100%;"></canvas>
-                <div id="status" style="position: absolute; top: 10px; left: 10px; color: #0f0; font-family: monospace; background: rgba(0,0,0,0.7); padding: 5px;">
-                    [AI ENGINE] Initializing MediaPipe...
+            f"""
+            <div id="container" style="position: relative; width: 100%; height: 500px; background: #000;">
+                <video id="input_video" controls style="width: 100%; height: 100%;"></video>
+                <canvas id="output_canvas" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none;"></canvas>
+                <div id="status" style="position: absolute; top: 10px; left: 10px; color: #0f0; font-family: monospace; background: rgba(0,0,0,0.7); padding: 5px; z-index: 10;">
+                    [AI ENGINE] Status: Loading Video...
                 </div>
             </div>
 
@@ -43,8 +45,20 @@ with tab1:
                 const canvasCtx = canvasElement.getContext('2d');
                 const statusDiv = document.getElementById('status');
 
-                function onResults(results) {
-                    if (!results.poseLandmarks) {
+                // 1. MediaPipe 설정
+                const pose = new Pose({{locateFile: (file) => {{
+                    return `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${{file}}`;
+                }}}});
+
+                pose.setOptions({{
+                    modelComplexity: 1,
+                    smoothLandmarks: true,
+                    minDetectionConfidence: 0.5,
+                    minTrackingConfidence: 0.5
+                }});
+
+                pose.onResults((results) => {{
+                    if (!results.poseLandmarks) {{
                         statusDiv.innerHTML = "[AI ENGINE] Pose not detected";
                         return;
                     }
@@ -52,39 +66,9 @@ with tab1:
                     
                     canvasCtx.save();
                     canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
-                    canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
                     
-                    // 관절 점과 선 그리기
-                    drawConnectors(canvasCtx, results.poseLandmarks, POSE_CONNECTIONS, {color: '#00FF00', lineWidth: 2});
-                    drawLandmarks(canvasCtx, results.poseLandmarks, {color: '#FF0000', lineWidth: 1, radius: 3});
-                    canvasCtx.restore();
-                }
-
-                const pose = new Pose({locateFile: (file) => {
-                    return `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}`;
-                }});
-
-                pose.setOptions({
-                    modelComplexity: 1,
-                    smoothLandmarks: true,
-                    minDetectionConfidence: 0.5,
-                    minTrackingConfidence: 0.5
-                });
-                pose.onResults(onResults);
-
-                // 영상 파일이 선택되면 분석 시작 루프 (실제 구현 시 파일 스트림 연동 필요)
-                console.log("MediaPipe Engine Ready for Galaxy S24");
-            </script>
-            """, height=450
-        )
-        st.video(st.session_state.f_vid)
-
-with tab2:
-    if st.session_state.f_vid:
-        st.subheader("🧬 픽셀 데이터 추출 결과")
-        st.info("현재 단계: JavaScript 엔진이 브라우저 단에서 관절 좌표를 연산 중입니다.")
-        st.write("- **알고리즘**: MediaPipe BlazePose")
-        st.write("- **연산 방식**: Client-side GPU Acceleration (S24 전용)")
-        st.success("이제 '랜덤'이 아닌 '실제 좌표' 기반의 분석 인프라가 구축되었습니다.")
-    else:
-        st.warning("영상을 업로드하면 AI가 실제 관절을 추적하기 시작합니다.")
+                    // 캔버스 크기를 영상 해상도에 맞춤
+                    canvasElement.width = videoElement.videoWidth;
+                    canvasElement.height = videoElement.videoHeight;
+                    
+                    // 관절 뼈대 그리기
