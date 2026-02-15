@@ -2,7 +2,7 @@ import streamlit as st
 import streamlit.components.v1 as components
 import base64
 
-# [1] HTML 템플릿: f-string을 쓰지 않는 순수 문자열 방식
+# [1] AI 분석 엔진 공용 템플릿 (f-string 에러 방지를 위해 일반 문자열 유지)
 HTML_TEMPLATE = """
 <div style="width:100%; background:#000; border-radius:10px; overflow:hidden; position:relative;">
     <video id="v" controls playsinline style="width:100%; display:block; height:auto;"></video>
@@ -21,7 +21,6 @@ HTML_TEMPLATE = """
     const sD=document.getElementById('s_v'), kD=document.getElementById('k_v'), mD=document.getElementById('md');
     let pL=null, pY=0;
 
-    // 파이썬 f-string 에러 방지를 위해 함수 인자명을 다르게 설정
     const pose=new Pose({locateFile:(path)=>`https://cdn.jsdelivr.net/npm/@mediapipe/pose/${path}`});
     pose.setOptions({modelComplexity:1, smoothLandmarks:true, minDetectionConfidence:0.5, minTrackingConfidence:0.5});
     
@@ -53,12 +52,39 @@ HTML_TEMPLATE = """
 """
 
 st.set_page_config(layout="wide")
-st.title("⛳ GDR AI 정면/측면 통합 분석 (무결성 버전)")
+st.title("⛳ GDR AI 정면/측면 통합 분석 엔진")
 
-tab1, tab2, tab3 = st.tabs(["🎥 정면 분석", "🎥 측면 분석", "📊 종합 리포트"])
+# [2] 탭 구성 - 업로드 UI와 분석기 출력 로직 정밀 결합
+tab1, tab2, tab3 = st.tabs(["🎥 정면 분석 (Front)", "🎥 측면 분석 (Side)", "📊 종합 분석 리포트"])
 
 with tab1:
-    f_front = st.file_uploader("정면 영상을 업로드하세요", type=['mp4', 'mov'], key="f_up")
+    st.subheader("정면 스윙 업로드")
+    f_front = st.file_uploader("영상을 선택하세요", type=['mp4', 'mov'], key="up_front")
     if f_front:
         v_src = f"data:video/mp4;base64,{base64.b64encode(f_front.read()).decode()}"
-        # .replace()를 사용하여 안전하게 데이터 주입 [cite: image_ba6721.png
+        # LABEL_HERE와 VIDEO_SRC_HERE를 정면에 맞춰 치환
+        html_front = HTML_TEMPLATE.replace("VIDEO_SRC_HERE", v_src).replace("LABEL_HERE", "FRONT")
+        components.html(html_front, height=500)
+
+with tab2:
+    st.subheader("측면 스윙 업로드")
+    # [수정] 측면 탭에서도 업로드 UI가 확실히 나오도록 명시
+    f_side = st.file_uploader("영상을 선택하세요", type=['mp4', 'mov'], key="up_side")
+    if f_side:
+        v_src = f"data:video/mp4;base64,{base64.b64encode(f_side.read()).decode()}"
+        # LABEL_HERE와 VIDEO_SRC_HERE를 측면에 맞춰 치환
+        html_side = HTML_TEMPLATE.replace("VIDEO_SRC_HERE", v_src).replace("LABEL_HERE", "SIDE")
+        components.html(html_side, height=500)
+
+with tab3:
+    st.subheader("📝 AI 스윙 종합 리포트")
+    if f_front or f_side:
+        col1, col2 = st.columns(2)
+        with col1:
+            st.info("🎯 **정면(Front)**: 임팩트 가속도와 하체 고정 위주 분석")
+        with col2:
+            st.info("🎯 **측면(Side)**: 척추각 유지 및 스윙 궤도 위주 분석")
+        st.divider()
+        st.success("6월 아빠가 되기 전, 완벽한 스윙 밸런스를 구축하세요! 👶")
+    else:
+        st.warning("영상을 업로드하면 AI가 실시간 물리 연산 리포트를 생성합니다.")
