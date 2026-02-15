@@ -12,17 +12,17 @@ def initialize_gemini():
 
 model = initialize_gemini()
 
-st.set_page_config(layout="wide", page_title="GDR AI Pro v83")
-st.title("⛳ GDR AI Pro: 하드 얼라이먼트 및 무결성 패치 v83.0")
+st.set_page_config(layout="wide", page_title="GDR AI Pro v84")
+st.title("⛳ GDR AI Pro: 연산 무결성 및 강제 출력 v84.0")
 
-# [2] 초정밀 데이터 다이렉트 엔진
-def get_hard_alignment_engine(f_v64, s_v64):
+# [2] 고정밀 데이터 강제 출력 엔진
+def get_forced_output_engine(f_v64, s_v64):
     return f"""
     <style>
         .v-wrap {{ background: #111; padding: 15px; border-radius: 12px; border: 1px solid #333; margin-bottom: 20px; }}
         video {{ width: 100%; border-radius: 8px; background: #000; }}
-        .display {{ margin-top:10px; color:#0f0; font-family:monospace; font-size:18px; font-weight:bold; background:rgba(0,255,0,0.1); padding:15px; border-radius:8px; border:1px solid #0f0; }}
-        #debug {{ font-size: 11px; color: #ff0; margin-top: 5px; }}
+        .display {{ margin-top:10px; color:#0f0; font-family:monospace; font-size:22px; font-weight:bold; background:rgba(0,255,0,0.1); padding:15px; border-radius:8px; border:1px solid #0f0; text-align:center; }}
+        #debug {{ font-size: 12px; color: #ff0; margin-top: 5px; text-align:center; }}
     </style>
 
     <div class="v-wrap">
@@ -38,9 +38,6 @@ def get_hard_alignment_engine(f_v64, s_v64):
     </div>
     
     <div id="debug">엔진 상태: 초기화 대기 중...</div>
-    <div style="text-align: center; margin-top: 15px;">
-        <button onclick="copyData()" style="background:#0f0; color:#000; border:none; padding:12px 25px; border-radius:8px; cursor:pointer; font-weight:bold; font-size:16px;">📋 데이터 복사</button>
-    </div>
 
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose"></script>
     <script>
@@ -53,38 +50,42 @@ def get_hard_alignment_engine(f_v64, s_v64):
 
         pose.onResults((r)=>{{
             if(!r.poseLandmarks) {{ dbg.innerText = "상태: 영상 내 인물을 찾는 중..."; return; }}
-            dbg.innerText = "상태: 인물 인식 성공! 수치 추출 중...";
             
             const lm = r.poseLandmarks;
             const hL=lm[23], hR=lm[24], sL=lm[11], sR=lm[12], wL=lm[15];
 
-            // 1. 하드 래치 (임팩트 시 고정)
-            if (wL.y > hL.y - 0.05) {{ f_lock = true; s_lock = true; return; }}
+            // [핵심] 임팩트 래치: 손목 위치 기반
+            if (wL.y > hL.y - 0.05) {{ f_lock = true; s_lock = true; dbg.innerText = "상태: 임팩트 고정 완료"; return; }}
 
-            // 2. 정면 다이렉트 브릿지
+            // 1. 정면 연산 (Zero-Division 방어)
             if(!f_lock) {{
                 if(f_c < 10) {{ 
-                    f_refH = Math.abs(hL.x - hR.x) || 0.1; f_stCX = (hL.x+hR.x)/2; f_c++; 
+                    f_refH = Math.abs(hL.x - hR.x); 
+                    f_stCX = (hL.x + hR.x)/2; 
+                    f_c++; 
+                    dbg.innerText = "상태: 기준점 학습 중 (" + f_c + "/10)";
                 }} else {{
-                    let sw = (((hL.x+hR.x)/2 - f_stCX) / f_refH) * 100;
-                    if(sw > f_pkSw && sw < 18) f_pkSw = sw;
+                    dbg.innerText = "상태: 데이터 실시간 연산 중";
+                    let safeRef = f_refH > 0 ? f_refH : 0.1;
+                    let sw = (((hL.x+hR.x)/2 - f_stCX) / safeRef) * 100;
+                    if(sw > f_pkSw && sw < 25) f_pkSw = sw;
                     document.getElementById('f_sw').innerText = f_pkSw.toFixed(1);
 
                     let xf = Math.abs((Math.atan2(sR.y-sL.y, sR.x-sL.x) - Math.atan2(hR.y-hL.y, hR.x-hL.x)) * 180/Math.PI);
-                    if(xf > f_pkXF && xf < 65) f_pkXF = xf;
+                    if(xf > f_pkXF && xf < 70) f_pkXF = xf;
                     document.getElementById('f_xf').innerText = (f_pkXF * 1.1).toFixed(1);
                 }}
             }}
 
-            // 3. 측면 다이렉트 브릿지
+            // 2. 측면 연산 (Direct Output)
             if(!s_lock) {{
                 const hC = (lm[23].y + lm[24].y)/2, sC = (lm[11].y + lm[12].y)/2;
                 const sp = Math.abs(Math.atan2(hC-sC, (lm[23].x+lm[24].x)/2 - (lm[11].x+lm[12].x)/2) * 180/Math.PI);
-                if(s_c < 10) {{ s_minS = sp; s_maxS = sp; s_c++; }} 
+                if(s_c < 5) {{ s_minS = sp; s_maxS = sp; s_c++; }} 
                 else {{
                     if(sp < s_minS) s_minS = sp; if(sp > s_maxS) s_maxS = sp;
                     let d = s_maxS - s_minS;
-                    if(d > s_pkSp && d < 15) s_pkSp = d;
+                    if(d > s_pkSp && d < 20) s_pkSp = d;
                     document.getElementById('s_sp').innerText = s_pkSp.toFixed(1);
                 }}
                 let kn = Math.abs(Math.atan2(lm[26].y-lm[28].y, lm[26].x-lm[28].x)*180/Math.PI);
@@ -96,13 +97,8 @@ def get_hard_alignment_engine(f_v64, s_v64):
         async function loop(v) {{
             while(!v.paused && !v.ended) {{
                 await pose.send({{image: v}});
-                await new Promise(r => setTimeout(r, 50)); // 샘플링 레이트 최적화
+                await new Promise(r => setTimeout(r, 60)); 
             }}
-        }}
-
-        function copyData() {{
-            const res = `[GDR_V83]\\nF_Sway: ${{document.getElementById('f_sw').innerText}}%\\nF_XF: ${{document.getElementById('f_xf').innerText}}deg\\nS_Spine: ${{document.getElementById('s_sp').innerText}}deg\\nS_Knee: ${{document.getElementById('s_kn').innerText}}deg`;
-            navigator.clipboard.writeText(res); alert("수치가 복사되었습니다.");
         }}
 
         vf.onplay = () => {{ f_pkSw=0; f_pkXF=0; f_c=0; f_lock=false; loop(vf); }};
@@ -120,9 +116,4 @@ s_f = st.file_uploader("Side Video", type=['mp4', 'mov'])
 if f_f and s_f:
     f_b = base64.b64encode(f_f.read()).decode()
     s_b = base64.b64encode(s_f.read()).decode()
-    components.html(get_hard_alignment_engine(f_b, s_b), height=1400)
-
-st.divider()
-in_text = st.text_area("데이터를 붙여넣으세요.")
-if st.button("🚀 종합 분석 리포트 생성"):
-    st.write(model.generate_content(f"역학 전문가 분석: {in_text}").text)
+    components.html(get_forced_output_engine(f_b, s_b), height=1400)
