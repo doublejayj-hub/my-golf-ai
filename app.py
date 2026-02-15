@@ -3,24 +3,36 @@ import google.generativeai as genai
 import streamlit.components.v1 as components
 import base64
 
-# [1] Gemini 모델 인식 로직 강화
-def get_gemini_model():
+# [1] 시스템 자가 진단: 사용 가능한 모델 리스트 강제 조회
+def initialize_gemini():
     try:
         genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
-        # 첫 번째 시도: 최신 1.5 Flash
-        return genai.GenerativeModel('gemini-1.5-flash')
-    except Exception:
-        try:
-            # 두 번째 시도: 표준 Pro 버전
-            return genai.GenerativeModel('gemini-pro')
-        except Exception as e:
-            st.error(f"Gemini 모델 인식에 실패했습니다: {e}")
+        # 현재 서버 환경에서 지원하는 모델 목록을 직접 가져옵니다.
+        available_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+        
+        # 1순위: 1.5-flash, 2순위: gemini-pro, 3순위: 목록의 첫 번째 모델
+        selected_model_name = ""
+        if 'models/gemini-1.5-flash' in available_models:
+            selected_model_name = 'models/gemini-1.5-flash'
+        elif 'models/gemini-pro' in available_models:
+            selected_model_name = 'models/gemini-pro'
+        elif available_models:
+            selected_model_name = available_models[0]
+        
+        if selected_model_name:
+            st.sidebar.success(f"연결된 모델: {selected_model_name}")
+            return genai.GenerativeModel(selected_model_name)
+        else:
+            st.error("사용 가능한 Gemini 모델을 찾을 수 없습니다.")
             return None
+    except Exception as e:
+        st.error(f"모델 초기화 중 치명적 오류: {e}")
+        return None
 
-model = get_gemini_model()
+model = initialize_gemini()
 
-st.set_page_config(layout="wide", page_title="GDR AI v34.0")
-st.title("⛳ GDR AI Pro: 모델 인식 최적화 v34.0")
+st.set_page_config(layout="wide", page_title="GDR AI v35.0")
+st.title("⛳ GDR AI Pro: 모델 자가 진단 버전 v35.0")
 
 # [2] 하이브리드 수치 안정화 엔진 (이동 평균 필터 유지)
 def get_pro_engine(v_b64):
@@ -68,7 +80,7 @@ def get_pro_engine(v_b64):
     """
 
 # [3] 메인 화면 구성
-f = st.file_uploader("분석할 스윙 영상을 업로드하세요", type=['mp4', 'mov'])
+f = st.file_uploader("분석할 영상을 업로드하세요", type=['mp4', 'mov'])
 
 if f:
     col_v, col_r = st.columns([1.3, 1])
@@ -81,20 +93,13 @@ if f:
         st.header("📋 AI 지능형 리포트")
         st.success("6월에 태어날 아기에게 보여줄 멋진 아빠의 스윙! 👶")
         
-        s_val = st.number_input("분석기에서 확인된 Δ Spine 수치를 입력하세요", min_value=0.0, step=0.1)
+        s_val = st.number_input("위 분석기에서 확인된 Δ Spine 수치를 입력하세요", min_value=0.0, step=0.1)
         
         if s_val > 0 and model:
             if st.button("🔄 Gemini AI 전문 분석 시작"):
-                with st.spinner("Gemini 엔진이 리포트를 작성 중입니다..."):
+                with st.spinner("최적화된 Gemini 엔진이 리포트를 작성 중입니다..."):
                     try:
-                        prompt = f"""
-                        당신은 골프 역학 전문가입니다. 다음 데이터를 분석해주세요.
-                        - 측정된 척추각 편차(Δ Spine): {s_val}도
-                        
-                        1. 이 데이터가 암시하는 '배치기' 문제를 원론적으로 분석하세요.
-                        2. 6월에 아빠가 될 골퍼에게 격려의 메시지를 보내주세요.
-                        한국어로 답변해주세요.
-                        """
+                        prompt = f"척추각 편차 {s_val}도인 골퍼에게 전문적인 역학 분석을 해주고 6월 아빠를 격려해줘. 한국어로 답변해."
                         response = model.generate_content(prompt)
                         st.chat_message("assistant").write(response.text)
                         
@@ -103,6 +108,6 @@ if f:
                         yt_link = "https://www.youtube.com/watch?v=VrOGGXdf_tM" if s_val > 4 else "https://www.youtube.com/watch?v=2vT64W2XfC0"
                         st.video(yt_link)
                     except Exception as e:
-                        st.error(f"리포트 생성 중 오류가 발생했습니다. 라이브러리 버전을 확인하세요: {e}")
+                        st.error(f"리포트 생성 중 오류: {e}")
 
 st.sidebar.markdown(f"**Baby Due: June 2026** 👶")
