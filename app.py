@@ -2,8 +2,8 @@ import streamlit as st
 import base64
 import streamlit.components.v1 as components
 
-st.set_page_config(layout="wide", page_title="GDR AI Pro v119")
-st.title("⛳ GDR AI Pro: v109.0 무결성 복구 버전 v119.0")
+st.set_page_config(layout="wide", page_title="GDR AI Pro v109")
+st.title("⛳ GDR AI Pro: 재생 무결성 및 레이어 최적화 v109.0")
 
 def get_stable_overlay_engine(f_v64, s_v64):
     return f"""
@@ -35,6 +35,7 @@ def get_stable_overlay_engine(f_v64, s_v64):
         const sc=document.getElementById('side_canvas'), ctx=sc.getContext('2d');
         let pose = null, f_d = {{}}, s_d = {{}};
 
+        // [무결성] 엔진 초기화 안정성 확보
         function initEngine() {{
             if(pose) {{ pose.close(); }}
             pose = new Pose({{locateFile:(p)=>`https://cdn.jsdelivr.net/npm/@mediapipe/pose/${{p}}` }});
@@ -56,12 +57,13 @@ def get_stable_overlay_engine(f_v64, s_v64):
             const lm = r.poseLandmarks;
             const hL=lm[24], hR=lm[23], sL=lm[12], sR=lm[11], wL=lm[16], wR=lm[15];
 
+            // 1. 정면 분석 (방향 교정 로직 유지)
             if (!vf.paused && !f_d.lock) {{
                 f_d.c++;
                 let curCX = (hL.x + hR.x) / 2;
                 if (f_d.c <= 5) f_d.stCX = curCX;
                 else {{
-                    let sw = ((f_d.stCX - curCX) / 0.1) * 100;
+                    let sw = ((f_d.stCX - curCX) / 0.1) * 100; // 백스윙 방향 양수화
                     if(sw > f_d.pkSw && sw < 25) f_d.pkSw = sw;
                     document.getElementById('f_sw').innerText = Math.max(0, f_d.pkSw).toFixed(1);
 
@@ -74,6 +76,7 @@ def get_stable_overlay_engine(f_v64, s_v64):
                 }}
             }}
 
+            // 2. 측면 분석 (3단 가이드 오버레이 무결성)
             if (!vs.paused && !s_d.lock) {{
                 s_d.c++;
                 sc.width = vs.offsetWidth; sc.height = vs.offsetHeight;
@@ -83,21 +86,22 @@ def get_stable_overlay_engine(f_v64, s_v64):
 
                 ctx.clearRect(0, 0, sc.width, sc.height);
                 
+                // 가이드라인 렌더링
                 if (s_d.c === 10) s_d.addr = {{s:sC, h:hC, ang:curSp}};
-                if (s_d.addr) drawLine(s_d.addr.s, s_d.addr.h, '#00f', 2);
+                if (s_d.addr) drawLine(s_d.addr.s, s_d.addr.h, '#00f', 2); // 어드레스(청색)
 
                 if (wR.y < lm[11].y) {{
                     s_d.topP = true;
                     if (!s_d.topL || curSp > s_d.topL.ang) s_d.topL = {{s:sC, h:hC, ang:curSp}};
                 }}
-                if (s_d.topL) drawLine(s_d.topL.s, s_d.topL.h, '#f00', 2);
+                if (s_d.topL) drawLine(s_d.topL.s, s_d.topL.h, '#f00', 2); // 탑(적색)
 
                 if (s_d.topP && wR.y > lm[23].y - 0.02) {{
                     s_d.lock = true;
-                    s_d.impL = {{s:sC, h:hC}};
+                    s_d.impL = {{s:sC, h:hC}}; // 임팩트(녹색)
                 }}
 
-                drawLine(sC, hC, '#0f0', 3);
+                drawLine(sC, hC, '#0f0', 3); // 실시간 척추선
                 if(s_d.impL) drawLine(s_d.impL.s, s_d.impL.h, '#0f0', 4);
                 
                 let d = s_d.addr ? Math.abs(curSp - s_d.addr.ang) : 0;
@@ -107,6 +111,9 @@ def get_stable_overlay_engine(f_v64, s_v64):
                 }} else if(d > s_d.pkSp) s_d.pkSp = d;
 
                 document.getElementById('s_sp').innerText = s_d.pkSp.toFixed(1);
+                let kn = Math.abs(Math.atan2(lm[26].y-lm[28].y, lm[26].x-lm[28].x)*180/Math.PI);
+                if(kn > s_d.pkKn) s_d.pkKn = kn;
+                document.getElementById('s_kn').innerText = s_d.pkKn.toFixed(1);
             }}
         }}
 
@@ -118,8 +125,9 @@ def get_stable_overlay_engine(f_v64, s_v64):
             }}
         }}
 
+        // [리셋] 비디오 컨트롤 방해 금지 설정
         vf.onplay = () => {{ 
-            initEngine(); f_d = {{ c:0, lock:false, stCX:0, top:false }};
+            initEngine(); f_d = {{ pkSw:0, pkXF:0, c:0, lock:false, stCX:0, top:false }};
             loop(vf); 
         }};
         vs.onplay = () => {{ 
@@ -132,8 +140,8 @@ def get_stable_overlay_engine(f_v64, s_v64):
     </script>
     """
 
-f_file = st.file_uploader("정면 영상 업로드", type=['mp4', 'mov'])
-s_file = st.file_uploader("측면 영상 업로드", type=['mp4', 'mov'])
+f_file = st.file_uploader("Front Video (정면)", type=['mp4', 'mov'])
+s_file = st.file_uploader("Side Video (측면)", type=['mp4', 'mov'])
 
 if f_file and s_file:
     f_b = base64.b64encode(f_file.read()).decode()
