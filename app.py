@@ -2,10 +2,13 @@ import streamlit as st
 import base64
 import streamlit.components.v1 as components
 
-st.set_page_config(layout="wide", page_title="GDR AI Pro v102")
-st.title("⛳ GDR AI Pro: Sway 교정 및 하드 래치 v102.0")
+# [1] 페이지 설정 및 제목
+st.set_page_config(layout="wide", page_title="GDR AI Pro v103")
+st.title("⛳ GDR AI Pro: 구문 수정 및 수치 정합성 v103.0")
 
-def get_calibrated_engine(f_v64, s_v64):
+# [2] 고정밀 분석 엔진 (f-string 중괄호 이스케이프 적용)
+def get_fixed_engine(f_v64, s_v64):
+    # 파이썬 f-string 내에서 JS 중괄호는 {{ }} 로 작성해야 함
     return f"""
     <style>
         .v-box {{ background: #111; padding: 15px; border-radius: 12px; border: 1px solid #333; margin-bottom: 20px; }}
@@ -14,7 +17,7 @@ def get_calibrated_engine(f_v64, s_v64):
         #log {{ font-size: 14px; color: #ff0; background: #222; padding: 10px; border-radius: 5px; margin-top: 10px; font-family: monospace; }}
     </style>
 
-    <div id="log">상태: 분석 대기 중...</div>
+    <div id="log">상태: 시스템 정상 가동 중...</div>
     
     <div class="v-box">
         <h4 style="color:#0f0; margin:0;">FRONT VIEW</h4>
@@ -46,14 +49,12 @@ def get_calibrated_engine(f_v64, s_v64):
             const lm = r.poseLandmarks;
             const hL=lm[24], hR=lm[23], sL=lm[12], sR=lm[11], wL=lm[16], wR=lm[15];
 
-            // 1. 정면 분석 (Sway 로직 강화)
+            // 1. 정면 분석 (Sway 백스윙 즉시 반영)
             if (!vf.paused && !f_d.lock) {{
                 f_d.c++;
-                // 기준점을 첫 3프레임 내에 고정하여 백스윙 즉시 반영
                 if (f_d.c < 4) f_d.stCX = (hL.x + hR.x) / 2;
 
                 let sw = (( (hL.x + hR.x)/2 - f_d.stCX ) / 0.15) * 100;
-                // 백스윙(오른쪽) 이동만 기록 (음수값 무시 및 감도 부스팅)
                 if(sw > f_d.pkSw && sw < 25) f_d.pkSw = sw;
                 document.getElementById('f_sw').innerText = f_d.pkSw.toFixed(1);
 
@@ -61,20 +62,16 @@ def get_calibrated_engine(f_v64, s_v64):
                 if(xf > f_d.pkXF && xf < 68) f_d.pkXF = xf;
                 document.getElementById('f_xf').innerText = (f_d.pkXF * 1.1).toFixed(1);
 
-                // 하드 래치: 백스윙 탑 이후 손목이 다시 어깨 높이 아래로 내려오면 즉시 잠금
                 if (wL.y < sL.y) f_d.top = true;
-                if (f_d.top && wL.y > (sL.y + 0.05)) {{
-                    f_d.lock = true;
-                    log.innerText = "상태: 정면 임팩트 시점 고정 완료";
-                }}
+                if (f_d.top && wL.y > (sL.y + 0.05)) f_d.lock = true;
             }}
 
             // 2. 측면 분석 (Delta Spine 보정)
             if (!vs.paused && !s_d.lock) {{
                 s_d.c++;
-                const hC_y = (lm[23].y + lm[24].y)/2, hC_x = (lm[23].x + lm[24].x)/2;
-                const sC_y = (lm[11].y + lm[12].y)/2, sC_x = (lm[11].x + lm[12].x)/2;
-                const sp = Math.abs(Math.atan2(hC_y - sC_y, hC_x - sC_x) * 180/Math.PI);
+                const hCy = (lm[23].y + lm[24].y)/2, hCx = (lm[23].x + lm[24].x)/2;
+                const sCy = (lm[11].y + lm[12].y)/2, sCx = (lm[11].x + lm[12].x)/2;
+                const sp = Math.abs(Math.atan2(hCy - sCy, hCx - sCx) * 180/Math.PI);
                 
                 if(s_d.c < 5) s_d.initS = sp;
                 else {{
@@ -90,7 +87,7 @@ def get_calibrated_engine(f_v64, s_v64):
                     if (s_d.top && wR.y > hR.y) s_d.lock = true;
                 }}
             }}
-        }
+        }}
 
         async function stream(v) {{
             while(!v.paused && !v.ended) {{
@@ -115,10 +112,11 @@ def get_calibrated_engine(f_v64, s_v64):
     </script>
     """
 
-f_f = st.file_uploader("정면 영상", type=['mp4', 'mov'])
-s_f = st.file_uploader("측면 영상", type=['mp4', 'mov'])
+# [3] 파일 업로드 및 분석 실행
+f_file = st.file_uploader("Front Video (정면)", type=['mp4', 'mov'])
+s_file = st.file_uploader("Side Video (측면)", type=['mp4', 'mov'])
 
-if f_f and s_f:
-    f_b = base64.b64encode(f_f.read()).decode()
-    s_b = base64.b64encode(s_f.read()).decode()
-    components.html(get_calibrated_engine(f_b, s_b), height=1400)
+if f_file and s_file:
+    f_b64 = base64.b64encode(f_file.read()).decode()
+    s_b64 = base64.b64encode(s_file.read()).decode()
+    components.html(get_fixed_engine(f_b64, s_b64), height=1400)
