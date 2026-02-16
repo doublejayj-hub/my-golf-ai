@@ -2,11 +2,11 @@ import streamlit as st
 import base64
 import streamlit.components.v1 as components
 
-st.set_page_config(layout="wide", page_title="GDR AI Pro v97")
-st.title("⛳ GDR AI Pro: 하드 리셋 및 메모리 퍼지 v97.0")
+st.set_page_config(layout="wide", page_title="GDR AI Pro v98")
+st.title("⛳ GDR AI Pro: 메모리 방전 및 독립 루프 v98.0")
 
-# [1] 고정밀 엔진 (세션 기반 완전 초기화 로직)
-def get_hard_reset_engine(f_v64, s_v64):
+# [1] 고정밀 엔진 (독립 메모리 격리 및 물리적 리셋)
+def get_isolated_engine(f_v64, s_v64):
     return f"""
     <style>
         .v-box {{ background: #111; padding: 15px; border-radius: 12px; border: 1px solid #333; margin-bottom: 20px; }}
@@ -15,7 +15,7 @@ def get_hard_reset_engine(f_v64, s_v64):
         #debug_log {{ font-size: 14px; color: #ff0; background: #222; padding: 10px; border-radius: 5px; margin-top: 10px; font-family: monospace; min-height: 40px; border: 1px dashed #555; }}
     </style>
 
-    <div id="debug_log">상태: 엔진 부팅 완료. 재생 버튼을 눌러주세요.</div>
+    <div id="debug_log">상태: 엔진 가동 준비 완료.</div>
     
     <div class="v-box">
         <video id="vf" controls playsinline muted></video>
@@ -31,11 +31,9 @@ def get_hard_reset_engine(f_v64, s_v64):
     <script>
         const vf=document.getElementById('vf'), vs=document.getElementById('vs'), log=document.getElementById('debug_log');
         
-        // [핵심] 모든 연산 변수를 세션 객체로 관리
-        let session = {{
-            f: {{ pkSw:0, pkXF:0, c:0, lock:false, stCX:0, refH:0.2 }},
-            s: {{ pkSp:0, pkKn:0, c:0, lock:false, initS:0 }}
-        }};
+        // [핵심] 정면/측면 세션 물리적 분리
+        let f_state = {{ pkSw:0, pkXF:0, c:0, lock:false, stCX:0, refH:0.2 }};
+        let s_state = {{ pkSp:0, pkKn:0, c:0, lock:false, initS:0 }};
 
         const pose = new Pose({{locateFile:(p)=>`https://cdn.jsdelivr.net/npm/@mediapipe/pose/${{p}}` }});
         pose.setOptions({{modelComplexity:0, smoothLandmarks:true, minDetectionConfidence:0.4}});
@@ -43,73 +41,79 @@ def get_hard_reset_engine(f_v64, s_v64):
         pose.onResults((r)=>{{
             if(!r.poseLandmarks) return;
             const lm = r.poseLandmarks;
-            const hL=lm[24], hR=lm[23], sL=lm[12], sR=lm[11], wL=lm[16];
+            const hL=lm[24], hR=lm[23], sL=lm[12], sR=lm[11], wL=lm[16], wR=lm[15];
             
-            // 실시간 상태 업데이트
-            log.innerText = `분석 중 | Frame: ${{++session.f.c}} | Wrist-Y: ${{wL.y.toFixed(3)}}`;
+            // 실시간 상태 로그 업데이트
+            log.innerText = `분석 가동 | F-Frame: ${{f_state.c}} | S-Frame: ${{s_state.c}}`;
 
-            // 자세 기반 지능형 래치 (세션 락 확인)
-            if (!session.f.lock && session.f.c > 10) {{
-                if (wL.y > hL.y - 0.03) {{ 
-                    session.f.lock = true; session.s.lock = true;
-                    log.innerHTML = "<b style='color:#0f0;'>🎯 임팩트 감지 - 최종 수치 고정</b>";
-                    return;
-                }}
-            }}
+            // 1. 정면 분석 (X-Factor 리셋 무결성 확보)
+            if (!f_state.lock && vf.readyState >= 2) {{
+                if (f_state.stCX === 0) f_state.stCX = (hL.x + hR.x) / 2;
+                f_state.c++;
 
-            // 정면 분석
-            if(!session.f.lock) {{
-                if(session.f.stCX === 0) session.f.stCX = (hL.x + hR.x) / 2;
-                
-                let sw = (((hL.x + hR.x)/2 - session.f.stCX) / session.f.refH) * 140;
-                if(sw > session.f.pkSw && sw < 20) session.f.pkSw = sw;
-                document.getElementById('f_sw').innerText = Math.abs(session.f.pkSw).toFixed(1);
+                let sw = (((hL.x + hR.x)/2 - f_state.stCX) / f_state.refH) * 140;
+                if(sw > f_state.pkSw && sw < 20) f_state.pkSw = sw;
+                document.getElementById('f_sw').innerText = Math.abs(f_state.pkSw).toFixed(1);
 
                 let xf = Math.abs((Math.atan2(sR.y-sL.y, sR.x-sL.x) - Math.atan2(hR.y-hL.y, hR.x-hL.x)) * 180/Math.PI);
-                if(xf > session.f.pkXF && xf < 65) session.f.pkXF = xf;
-                document.getElementById('f_xf').innerText = (session.f.pkXF * 1.1).toFixed(1);
+                if(xf > f_state.pkXF && xf < 65) f_state.pkXF = xf;
+                document.getElementById('f_xf').innerText = (f_state.pkXF * 1.1).toFixed(1);
+
+                // 자세 기반 래치
+                if (f_state.c > 10 && wL.y > hL.y - 0.03) f_state.lock = true;
             }}
 
-            // 측면 분석
-            if(!session.s.lock) {{
+            // 2. 측면 분석 (독립 루프 보장)
+            if (!s_state.lock && vs.readyState >= 2) {{
+                s_state.c++;
                 const hC = (lm[23].y + lm[24].y)/2, sC = (lm[11].y + lm[12].y)/2;
                 const sp = Math.abs(Math.atan2(hC-sC, (lm[23].x+lm[24].x)/2 - (lm[11].x+lm[12].x)/2) * 180/Math.PI);
-                if(session.s.initS === 0) session.s.initS = sp;
-                let d = Math.abs(sp - session.s.initS);
-                if(d > session.s.pkSp && d < 15) session.s.pkSp = d;
-                document.getElementById('s_sp').innerText = session.s.pkSp.toFixed(1);
+                
+                if(s_state.initS === 0) s_state.initS = sp;
+                let d = Math.abs(sp - s_state.initS);
+                if(d > s_state.pkSp && d < 15) s_state.pkSp = d;
+                document.getElementById('s_sp').innerText = s_state.pkSp.toFixed(1);
                 
                 let kn = Math.abs(Math.atan2(lm[26].y-lm[28].y, lm[26].x-lm[28].x)*180/Math.PI);
-                if(kn > session.s.pkKn) session.s.pkKn = kn;
-                document.getElementById('s_kn').innerText = session.s.pkKn.toFixed(1);
+                if(kn > s_state.pkKn) s_state.pkKn = kn;
+                document.getElementById('s_kn').innerText = s_state.pkKn.toFixed(1);
+
+                // 측면 자세 기반 래치
+                if (s_state.c > 10 && wR.y > lm[23].y - 0.03) s_state.lock = true;
             }}
         }});
 
-        async function run(v) {{
+        async function stream(v) {{
             while(!v.paused && !v.ended) {{
                 await pose.send({{image: v}});
                 await new Promise(r => setTimeout(r, 45));
             }}
         }}
 
-        // [핵심] 재생 시 물리적 메모리 클리어 및 UI 리셋
+        // [핵심] 재생 시 전하 방전 및 물리적 리셋
         vf.onplay = () => {{ 
-            session.f = {{ pkSw:0, pkXF:0, c:0, lock:false, stCX:0, refH:0.2 }};
-            session.s = {{ pkSp:0, pkKn:0, c:0, lock:false, initS:0 }};
-            document.querySelectorAll('span').forEach(s => s.innerText = "0.0");
-            run(vf); 
+            f_state = {{ pkSw:0, pkXF:0, c:0, lock:false, stCX:0, refH:0.2 }};
+            document.getElementById('f_sw').innerText = "0.0";
+            document.getElementById('f_xf').innerText = "0.0";
+            stream(vf); 
         }};
-        vs.onplay = () => {{ run(vs); }};
+
+        vs.onplay = () => {{ 
+            s_state = {{ pkSp:0, pkKn:0, c:0, lock:false, initS:0 }};
+            document.getElementById('s_sp').innerText = "0.0";
+            document.getElementById('s_kn').innerText = "0.0";
+            stream(vs); 
+        }};
 
         vf.src = URL.createObjectURL(new Blob([Uint8Array.from(atob("{f_v64}"), c => c.charCodeAt(0))], {{type: 'video/mp4'}}));
         vs.src = URL.createObjectURL(new Blob([Uint8Array.from(atob("{s_v64}"), c => c.charCodeAt(0))], {{type: 'video/mp4'}}));
     </script>
     """
 
-f_f = st.file_uploader("Front Video", type=['mp4', 'mov'])
-s_f = st.file_uploader("Side Video", type=['mp4', 'mov'])
+f_f = st.file_uploader("정면 영상 업로드", type=['mp4', 'mov'])
+s_f = st.file_uploader("측면 영상 업로드", type=['mp4', 'mov'])
 
 if f_f and s_f:
     f_b = base64.b64encode(f_f.read()).decode()
     s_b = base64.b64encode(s_f.read()).decode()
-    components.html(get_hard_reset_engine(f_b, s_b), height=1400)
+    components.html(get_isolated_engine(f_b, s_b), height=1400)
